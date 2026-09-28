@@ -15,6 +15,8 @@ pub const TEMPLATE: &str = r#"# tbtui config
 # All fields are optional except that a log path must come from here or the
 # command line.
 
+# palette = "okabe-ito"              # run colors: okabe-ito | tol-bright (colorblind-safe) | vivid
+
 # [remotes.gpu1]
 # host = "10.0.0.5"                  # IP / hostname / ~/.ssh/config Host alias (default: NAME)
 # user = "paolo"
@@ -32,6 +34,8 @@ pub const TEMPLATE: &str = r#"# tbtui config
 #[derive(Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
+    /// run color palette: okabe-ito (default), tol-bright, vivid
+    pub palette: Option<String>,
     #[serde(default)]
     pub remotes: BTreeMap<String, RemoteCfg>,
 }

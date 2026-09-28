@@ -51,6 +51,7 @@ pub fn run(store: &Store, a: &SnapArgs) -> anyhow::Result<()> {
                     run.tags.get(tag).map(|pts| Series {
                         name,
                         rgb: plot::run_rgb(*ci),
+                        symbol: plot::run_symbol(*ci),
                         points: pts,
                         first_wall: run.first_wall,
                     })
@@ -122,7 +123,7 @@ pub fn list(store: &Store, tags_re: Option<&Regex>, color: bool) {
     for (i, (name, run)) in store.runs.iter().enumerate() {
         let (cr, cg, cb) = plot::run_rgb(i);
         let c = if color { sgr_fg(plot::rgb(cr, cg, cb)) } else { String::new() };
-        println!("{c}{b}● {name}{r}  {d}({} tags){r}", run.tags.len());
+        println!("{c}{b}{} {name}{r}  {d}({} tags){r}", plot::run_symbol(i), run.tags.len());
         let w = run.tags.keys().map(|t| t.len()).max().unwrap_or(0);
         for (tag, pts) in &run.tags {
             if tags_re.is_some_and(|re| !re.is_match(tag)) {

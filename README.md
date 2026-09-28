@@ -8,7 +8,12 @@ a one-off snapshot (great over SSH or in CI logs).
 - Reads PyTorch / tensorboardX `simple_value` scalars and TF2 tensor scalars
 - Live tailing: only new bytes are read on each refresh
 - TensorBoard-style debiased EMA smoothing, log-y, outlier clipping, step or time x-axis
-- Value cursor (keys or mouse hover), zoom/pan (keys or scroll wheel), grid view
+- Collapsible trees for tags and runs (split on `/`; shared prefixes merge into one row)
+- Pin any set of tags to see them side by side; the grid adapts to the window and pane sizes
+- Resizable panes (drag the borders or use `<` `>` `{` `}`), adjustable grid columns
+- Regex filters for tags and runs, or build one from examples with [grex](https://github.com/pemistahl/grex)
+- Colorblind-safe palettes (Okabe-Ito by default, Paul Tol bright) plus a shape per run drawn on the lines
+- Value cursor (keys or mouse hover), zoom/pan (keys or scroll wheel)
 - Single ~2 MB static binary, no Python, no protobuf codegen. 1.5M points load in ~0.1 s
 
 ## Install
@@ -77,19 +82,45 @@ error in the top bar until it succeeds.
 
 ## Keys
 
+Press `?` in the app for the full list.
+
 | key | action |
 |---|---|
-| `↑↓` `jk` | select tag (or run, after `Tab`) |
-| `Tab` | switch focus tags ↔ runs |
-| `Space` / click | toggle run; `a` all/none; `i` isolate run |
-| `/` | filter tags (regex) |
-| `g` | grid view of all filtered tags |
-| `←→` `hl` / mouse hover | value cursor (legend shows values at that step); `Esc` clears |
-| `+ -` / scroll wheel | zoom x; `[ ]` pan; `0` reset |
-| `s` / `S` | more / less smoothing |
-| `y` `o` `x` `u` | log-y · ignore outliers · step↔time · raw lines on/off |
-| `r` `p` | reload now · pause live |
-| `?` `q` | help · quit |
+| `Tab` | focus tags → runs → charts |
+| `↑↓` `←→` `Enter` / click arrow | move, fold/unfold tree groups · `C` fold all |
+| `Space` / click mark | tags: pin (a group pins all its tags) · runs: show/hide |
+| `a` · `i` | pin all/none, show all/none · isolate run(s) |
+| `g` | grid of all (filtered) tags |
+| `/` | filter the focused tree (regex) |
+| `e` | filter by example: starts with the highlighted item |
+| `<` `>` · `{` `}` · `,` `.` `;` | sidebar width · tags/runs split · grid columns (`;` = auto) · or drag borders |
+| `b` | hide sidebar |
+| charts: `←→` `↑↓` / hover | value cursor · focused chart |
+| `+ -` / wheel · `[ ]` · `0` | zoom · pan · reset |
+| `s` `S` · `y` `o` `x` `u` `m` | smoothing · log-y, outliers, step↔time, raw lines, shape markers |
+| `P` | palette: okabe-ito → tol-bright → vivid |
+| `r` `p` · `q` | reload · pause · quit |
+
+What the charts show: every tag with `g`; otherwise the pinned tags; with
+nothing pinned, the highlighted tag, or all tags of a highlighted group.
+
+### Filtering by example (grex)
+
+In the filter editor (`/` or `e`), `Tab` or a click adds or removes the
+highlighted item as an example. `^T` switches to typing an example yourself.
+grex turns the examples into a regex that is applied live. While the editor is
+open, non-matching items stay in the tree (dimmed) so you can still pick them.
+
+Options:
+
+- `^D` turns digits into `\d`, so `seed0` and `seed1` also match `seed7`.
+- `^W` turns word characters into `\w`.
+- `^R` collapses repeated parts.
+- `^A` switches between matching the whole name and matching anywhere in it.
+
+You can also edit the regex by hand. `Enter` keeps the filter, `Esc` restores
+the previous one.
 
 Colors use truecolor when `$COLORTERM` says so, 256 colors otherwise
-(`--no-truecolor` forces 256). `NO_COLOR` / `--no-color` disables color in `snap`/`ls`.
+(`--no-truecolor` forces 256). Choose the run palette with `--palette` or
+`palette = "tol-bright"` in the config file. `NO_COLOR` / `--no-color` disables color in `snap`/`ls`.

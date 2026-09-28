@@ -1,10 +1,12 @@
 mod app;
 mod config;
 mod events;
+mod filter;
 mod plot;
 mod remote;
 mod snapshot;
 mod store;
+mod tree;
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use regex::{Regex, RegexBuilder};
@@ -42,6 +44,10 @@ struct Cli {
     /// Initial tag filter (regex)
     #[arg(short, long)]
     filter: Option<String>,
+
+    /// Initial run filter (regex)
+    #[arg(short = 'R', long)]
+    run_filter: Option<String>,
 
     #[command(flatten)]
     plot: PlotArgs,
@@ -155,6 +161,12 @@ struct PlotArgs {
     /// Only use 256 colors (auto-detected from $COLORTERM otherwise)
     #[arg(long, global = true)]
     no_truecolor: bool,
+    /// Run colors: okabe-ito and tol-bright are colorblind-safe [default: okabe-ito]
+    #[arg(long, global = true, value_parser = ["okabe-ito", "tol-bright", "vivid"])]
+    palette: Option<String>,
+    /// Don't draw per-run shape markers on the lines
+    #[arg(long, global = true)]
+    no_markers: bool,
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -164,6 +176,13 @@ enum XArg {
 }
 
 impl PlotArgs {
+    /// The command-line palette wins over the config file's.
+    fn apply_palette(&self) {
+        if let Some(p) = &self.palette {
+            plot::set_palette(p);
+        }
+    }
+
     fn opts(&self) -> plot::PlotOpts {
         plot::PlotOpts {
             smoothing: self.smoothing.clamp(0.0, 0.999),
@@ -172,6 +191,7 @@ impl PlotArgs {
                 XArg::Step => plot::XMode::Step,
                 XArg::Time => plot::XMode::Relative,
             },
+            markers: !self.no_markers,
             ..Default::default()
         }
     }
@@ -189,6 +209,10 @@ fn regex(s: &Option<String>) -> anyhow::Result<Option<Regex>> {
 fn open_store(args: Vec<String>, ssh: &SshArgs, interval: Duration) -> anyhow::Result<(store::Store, String)> {
     let args = if args.is_empty() { vec![".".to_string()] } else { args };
     let cfg = config::load(ssh.config.as_deref())?;
+    if let Some(p) = &cfg.palette
+        && !plot::set_palette(p) {
+            anyhow::bail!("unknown palette {p:?} in config (okabe-ito, tol-bright, vivid)");
+        }
     let ov = ssh.overrides();
     let targets = args.iter().map(|a| config::resolve(a, &cfg, &ov)).collect::<anyhow::Result<Vec<Target>>>()?;
     let label = targets
@@ -237,6 +261,7 @@ fn main() -> anyhow::Result<()> {
         Some(Cmd::Snapshot(s)) => {
             plot::init_colors(s.plot.no_truecolor);
             let (store, _) = open_store(s.logdir, &cli.ssh, Duration::from_secs(3600))?;
+            s.plot.apply_palette();
             let tty = std::io::stdout().is_terminal();
             let term_w = ratatui::crossterm::terminal::size().map(|(w, _)| w).unwrap_or(100);
             let args = snapshot::SnapArgs {
@@ -262,12 +287,14 @@ fn main() -> anyhow::Result<()> {
             plot::init_colors(cli.plot.no_truecolor);
             let interval = Duration::from_secs_f64(cli.interval.max(0.1));
             let (store, label) = open_store(cli.logdir.into_iter().chain(cli.logdir_flag).collect(), &cli.ssh, interval)?;
+            cli.plot.apply_palette();
             let app = app::App::new(
                 store,
                 label,
                 cli.plot.opts(),
                 interval,
-                cli.filter.unwrap_or_default(),
+                cli.filter.as_deref().unwrap_or_default(),
+                cli.run_filter.as_deref().unwrap_or_default(),
             );
             let mut term = ratatui::init();
             let res = app.run(&mut term);

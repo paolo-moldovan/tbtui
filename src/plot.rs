@@ -9,6 +9,7 @@ use ratatui::symbols::{self, Marker};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Axis, Block, BorderType, Borders, Chart, Dataset, GraphType, Row, Table, Widget};
 use std::sync::OnceLock;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 // ---------------------------------------------------------------- colors
 
@@ -40,21 +41,85 @@ pub fn rgb(r: u8, g: u8, b: u8) -> Color {
     }
 }
 
-const PALETTE: [(u8, u8, u8); 10] = [
-    (0x4e, 0xa8, 0xff), // blue
-    (0xff, 0x8c, 0x42), // orange
-    (0x5c, 0xd6, 0x7a), // green
-    (0xff, 0x5c, 0x7a), // pink-red
-    (0xb4, 0x8c, 0xff), // purple
-    (0x4f, 0xd6, 0xd6), // cyan
-    (0xff, 0xd1, 0x4f), // yellow
-    (0xff, 0x7a, 0xd9), // magenta
-    (0x9c, 0xc9, 0x4f), // lime
-    (0xc8, 0xa0, 0x78), // tan
+type Rgb = (u8, u8, u8);
+
+/// Run palettes. The first two are colorblind-safe (Okabe & Ito 2008;
+/// Paul Tol "bright"), with greys lightened for dark terminals.
+pub const PALETTES: [(&str, &[Rgb]); 3] = [
+    (
+        "okabe-ito",
+        &[
+            (0xE6, 0x9F, 0x00), // orange
+            (0x56, 0xB4, 0xE9), // sky blue
+            (0x00, 0x9E, 0x73), // bluish green
+            (0xF0, 0xE4, 0x42), // yellow
+            (0x3D, 0x8F, 0xD6), // blue (lightened from #0072B2 for dark backgrounds)
+            (0xD5, 0x5E, 0x00), // vermillion
+            (0xCC, 0x79, 0xA7), // reddish purple
+            (0xBB, 0xBB, 0xBB), // grey
+        ],
+    ),
+    (
+        "tol-bright",
+        &[
+            (0x44, 0x77, 0xAA),
+            (0xEE, 0x66, 0x77),
+            (0x22, 0x88, 0x33),
+            (0xCC, 0xBB, 0x44),
+            (0x66, 0xCC, 0xEE),
+            (0xAA, 0x33, 0x77),
+            (0xBB, 0xBB, 0xBB),
+        ],
+    ),
+    (
+        "vivid",
+        &[
+            (0x4e, 0xa8, 0xff),
+            (0xff, 0x8c, 0x42),
+            (0x5c, 0xd6, 0x7a),
+            (0xff, 0x5c, 0x7a),
+            (0xb4, 0x8c, 0xff),
+            (0x4f, 0xd6, 0xd6),
+            (0xff, 0xd1, 0x4f),
+            (0xff, 0x7a, 0xd9),
+            (0x9c, 0xc9, 0x4f),
+            (0xc8, 0xa0, 0x78),
+        ],
+    ),
 ];
 
-pub fn run_rgb(i: usize) -> (u8, u8, u8) {
-    PALETTE[i % PALETTE.len()]
+static PALETTE_IDX: AtomicUsize = AtomicUsize::new(0);
+
+pub fn palette_name() -> &'static str {
+    PALETTES[PALETTE_IDX.load(Ordering::Relaxed)].0
+}
+
+pub fn set_palette(name: &str) -> bool {
+    match PALETTES.iter().position(|(n, _)| *n == name) {
+        Some(i) => {
+            PALETTE_IDX.store(i, Ordering::Relaxed);
+            true
+        }
+        None => false,
+    }
+}
+
+pub fn cycle_palette() {
+    PALETTE_IDX.store((PALETTE_IDX.load(Ordering::Relaxed) + 1) % PALETTES.len(), Ordering::Relaxed);
+}
+
+pub fn run_rgb(i: usize) -> Rgb {
+    let p = PALETTES[PALETTE_IDX.load(Ordering::Relaxed)].1;
+    p[i % p.len()]
+}
+
+/// Shape per run, so runs are distinguishable without relying on color.
+const SYMBOLS: [char; 8] = ['●', '▲', '■', '◆', '▼', '✚', '✖', '★'];
+
+pub fn run_symbol(i: usize) -> char {
+    // offset by the palette cycle so (color, shape) pairs stay unique longer
+    let n = PALETTES[PALETTE_IDX.load(Ordering::Relaxed)].1.len();
+    SYMBOLS[(i + i / n) % SYMBOLS.len()]
 }
 
 fn dim((r, g, b): (u8, u8, u8)) -> Color {
@@ -133,6 +198,8 @@ pub struct PlotOpts {
     pub legend: bool,
     /// let the legend take as many rows as there are runs (snapshot mode)
     pub legend_full: bool,
+    /// draw per-run shape markers on the lines
+    pub markers: bool,
 }
 
 impl Default for PlotOpts {
@@ -147,6 +214,7 @@ impl Default for PlotOpts {
             show_raw: true,
             legend: true,
             legend_full: false,
+            markers: true,
         }
     }
 }
@@ -154,6 +222,7 @@ impl Default for PlotOpts {
 pub struct Series<'a> {
     pub name: &'a str,
     pub rgb: (u8, u8, u8),
+    pub symbol: char,
     pub points: &'a [Point],
     pub first_wall: f64,
 }
@@ -422,7 +491,16 @@ pub fn draw_panel(buf: &mut Buffer, area: Rect, title: &str, series: &[Series], 
     };
     let xl = lab(x_view.0, x_view.1, nx, &fx);
     let yl = lab(y0, y1, ny, &fy);
+    // mirror ratatui's Chart layout to know exactly where the plot area is
     let ylw = yl.iter().map(|s| s.chars().count()).max().unwrap_or(0) as u16;
+    let x0w = xl.first().map_or(0, |s| s.chars().count()) as u16;
+    let left = ylw.max(x0w.saturating_sub(1)).min(chart_area.width / 3);
+    let graph = Rect {
+        x: chart_area.x + left + 1,
+        y: chart_area.y,
+        width: chart_area.width.saturating_sub(left + 1),
+        height: chart_area.height.saturating_sub(2),
+    };
     let axis_style = Style::default().fg(frame());
     let label_style = Style::default().fg(muted());
     let chart = Chart::new(datasets)
@@ -441,21 +519,42 @@ pub fn draw_panel(buf: &mut Buffer, area: Rect, title: &str, series: &[Series], 
         .legend_position(None);
     chart.render(chart_area, buf);
 
+    // shape markers: at the end of each line and where it crosses the cursor
+    if o.markers && graph.width > 2 && graph.height > 1 {
+        let to_cell = |x: f64, y: f64| -> Option<(u16, u16)> {
+            if !(x_view.0..=x_view.1).contains(&x) || !(y0..=y1).contains(&y) {
+                return None;
+            }
+            let rx = graph.width as f64 * 2.0 - 1.0;
+            let ry = graph.height as f64 * 4.0 - 1.0;
+            let cx = ((x - x_view.0) * rx / (x_view.1 - x_view.0)).round() as u16 / 2;
+            let cy = ((y1 - y) * ry / (y1 - y0)).round() as u16 / 4;
+            Some((graph.x + cx.min(graph.width - 1), graph.y + cy.min(graph.height - 1)))
+        };
+        let ty = |y: f64| if o.log_y { (y > 0.0).then(|| y.log10()) } else { Some(y) };
+        for (s, p) in series.iter().zip(&preps) {
+            let st = Style::default().fg(rgb(s.rgb.0, s.rgb.1, s.rgb.2)).add_modifier(Modifier::BOLD);
+            let mut idxs = Vec::new();
+            // last point inside the view
+            if let Some(i) = (0..p.xs.len()).rev().find(|&i| p.xs[i] <= x_view.1 && p.xs[i] >= x_view.0) {
+                idxs.push(i);
+            }
+            if let Some(cx) = o.cursor {
+                idxs.extend(nearest(&p.xs, cx));
+            }
+            for i in idxs {
+                if let Some((cx, cy)) = ty(p.smooth[i]).and_then(|y| to_cell(p.xs[i], y)) {
+                    buf[(cx, cy)].set_char(s.symbol).set_style(st);
+                }
+            }
+        }
+    }
+
     if legend_h > 0 {
         draw_legend(buf, legend_area, series, &preps, o);
     }
 
-    let gx = chart_area.x + ylw + 1;
-    PlotInfo {
-        x_full,
-        x_view,
-        graph: Rect {
-            x: gx,
-            y: chart_area.y,
-            width: (chart_area.x + chart_area.width).saturating_sub(gx),
-            height: chart_area.height.saturating_sub(2),
-        },
-    }
+    PlotInfo { x_full, x_view, graph }
 }
 
 fn draw_legend(buf: &mut Buffer, area: Rect, series: &[Series], preps: &[Prep], o: &PlotOpts) {
@@ -492,7 +591,7 @@ fn draw_legend(buf: &mut Buffer, area: Rect, series: &[Series], preps: &[Prep], 
         };
         let min = p.raw.iter().copied().filter(|v| v.is_finite()).fold(f64::INFINITY, f64::min);
         let mut cells = vec![
-            Span::styled(symbols::line::THICK_HORIZONTAL.repeat(2), Style::default().fg(c)),
+            Span::styled(format!("{}{}", symbols::line::THICK_HORIZONTAL, s.symbol), Style::default().fg(c)),
             Span::styled(s.name.to_string(), Style::default().fg(c)),
         ];
         let strong = Style::default().fg(rgb(0xe6, 0xe6, 0xe6)).add_modifier(Modifier::BOLD);
