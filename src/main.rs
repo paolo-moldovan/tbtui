@@ -164,6 +164,9 @@ struct PlotArgs {
     /// Run colors: okabe-ito and tol-bright are colorblind-safe [default: okabe-ito]
     #[arg(long, global = true, value_parser = ["okabe-ito", "tol-bright", "vivid"])]
     palette: Option<String>,
+    /// Scale the y-axis to the 5th–95th percentile, ignoring spikes (toggle with `o`)
+    #[arg(short = 'O', long, global = true)]
+    ignore_outliers: bool,
     /// Don't draw per-run shape markers on the lines
     #[arg(long, global = true)]
     no_markers: bool,
@@ -192,6 +195,7 @@ impl PlotArgs {
                 XArg::Time => plot::XMode::Relative,
             },
             markers: !self.no_markers,
+            ignore_outliers: self.ignore_outliers,
             ..Default::default()
         }
     }

@@ -32,6 +32,7 @@ Prebuilt Linux (musl, x86_64/arm64) and macOS binaries: push a `v*` tag and
 ```bash
 tbtui runs/                      # interactive, live-updating (like tensorboard --logdir runs/)
 tbtui runs/ -f 'loss' -s 0.9     # start filtered to loss tags, heavier smoothing
+tbtui runs/ -O                   # ignore outliers: y-axis fits the 5th–95th percentile (toggle: o)
 tbtui exp_a/ exp_b/              # several roots; runs get prefixed with the root name
 tbtui snap runs/ -t loss         # print charts once and exit
 tbtui snap runs/ -t 'val' -c 3 -H 14 --log-y

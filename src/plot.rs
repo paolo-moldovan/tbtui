@@ -334,6 +334,32 @@ fn visible(xs: &[f64], ys: &[f64], view: (f64, f64), buckets: usize, log: bool) 
     out
 }
 
+/// All (transformed) y values inside the x view, raw and/or smoothed.
+fn in_view_values(preps: &[Prep], view: (f64, f64), with_raw: bool, log: bool) -> Vec<f64> {
+    let mut out = Vec::new();
+    for p in preps {
+        for (i, &x) in p.xs.iter().enumerate() {
+            if x < view.0 || x > view.1 {
+                continue;
+            }
+            let vals = if with_raw { [Some(p.smooth[i]), Some(p.raw[i])] } else { [Some(p.smooth[i]), None] };
+            for v in vals.into_iter().flatten() {
+                let v = if log { if v > 0.0 { v.log10() } else { continue } } else { v };
+                if v.is_finite() {
+                    out.push(v);
+                }
+            }
+        }
+    }
+    out
+}
+
+/// q-quantile (0..=1) by selection, O(n).
+fn quantile(v: &mut [f64], q: f64) -> f64 {
+    let i = ((v.len() - 1) as f64 * q).round() as usize;
+    *v.select_nth_unstable_by(i, |a, b| a.total_cmp(b)).1
+}
+
 fn nearest(xs: &[f64], x: f64) -> Option<usize> {
     if xs.is_empty() {
         return None;
@@ -374,6 +400,9 @@ pub fn draw_panel(buf: &mut Buffer, area: Rect, title: &str, series: &[Series], 
     }
     if o.xmode == XMode::Relative {
         flags.push("x: time".into());
+    }
+    if o.ignore_outliers {
+        flags.push("no outliers".into());
     }
     if o.x_range.is_some() {
         flags.push("zoom".into());
@@ -426,23 +455,33 @@ pub fn draw_panel(buf: &mut Buffer, area: Rect, title: &str, series: &[Series], 
         .filter(|(x, _)| *x >= x_view.0 && *x <= x_view.1)
         .map(|p| p.1)
         .collect();
-    let (mut y0, mut y1) = if ys.is_empty() {
-        (0.0, 1.0)
-    } else if o.ignore_outliers && ys.len() > 20 {
-        ys.sort_by(|a, b| a.total_cmp(b));
-        let q = |f: f64| ys[((ys.len() - 1) as f64 * f) as usize];
-        (q(0.02), q(0.98))
-    } else {
-        ys.iter().fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), &y| (a.min(y), b.max(y)))
-    };
+    let (full0, full1) = ys.iter().fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), &y| (a.min(y), b.max(y)));
+    let (mut y0, mut y1) = if ys.is_empty() { (0.0, 1.0) } else { (full0, full1) };
+    let mut pad_frac = 0.05;
+    if o.ignore_outliers {
+        // Like TensorBoard: scale to the 5th–95th percentile (+20% padding).
+        // Use the full-resolution values in view, not the downsampled
+        // min/max points, which deliberately keep the spikes.
+        ys = in_view_values(&preps, x_view, with_raw, o.log_y);
+        if ys.len() >= 10 {
+            let (lo, hi) = (quantile(&mut ys, 0.05), quantile(&mut ys, 0.95));
+            if hi > lo {
+                (y0, y1) = (lo, hi);
+                pad_frac = 0.2;
+            }
+        }
+    }
     if y1 - y0 < 1e-12 {
         let d = if y0.abs() > 1e-12 { y0.abs() * 0.05 } else { 1.0 };
         y0 -= d;
         y1 += d;
     }
-    let pad = (y1 - y0) * 0.05;
-    y0 -= pad;
-    y1 += pad;
+    let pad = (y1 - y0) * pad_frac;
+    // never pad past the data itself
+    (y0, y1) = ((y0 - pad).max(full0 - (full1 - full0) * 0.05), (y1 + pad).min(full1 + (full1 - full0) * 0.05));
+    if !(y1 > y0) {
+        (y0, y1) = (y0 - 1.0, y0 + 1.0);
+    }
 
     // cursor line
     let cursor_pts: Vec<(f64, f64)> = match o.cursor {
@@ -622,6 +661,14 @@ mod tests {
     fn ema_debiased_constant() {
         let s = ema(&[2.0, 2.0, 2.0], 0.9);
         assert!(s.iter().all(|v| (v - 2.0).abs() < 1e-9));
+    }
+
+    #[test]
+    fn quantiles() {
+        let mut v: Vec<f64> = (0..=100).map(f64::from).collect();
+        v.reverse();
+        assert_eq!(quantile(&mut v, 0.05), 5.0);
+        assert_eq!(quantile(&mut v, 0.95), 95.0);
     }
 
     #[test]
