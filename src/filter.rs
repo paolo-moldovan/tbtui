@@ -2,9 +2,12 @@
 //! regex or generated with grex from example names.
 
 use grex::RegExpBuilder;
+use crate::session::FilterSaved;
 use regex::{Regex, RegexBuilder};
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct GrexOpts {
     /// \d for digits: "seed0", "seed1" also match "seed7"
     pub digits: bool,
@@ -36,6 +39,16 @@ impl Filter {
     pub fn new(text: &str) -> Self {
         let mut f = Filter::default();
         f.set_text(text);
+        f
+    }
+
+    pub fn to_saved(&self) -> FilterSaved {
+        FilterSaved { text: self.text.clone(), examples: self.examples.clone(), grex: self.grex }
+    }
+
+    pub fn from_saved(s: &FilterSaved) -> Self {
+        let mut f = Filter { examples: s.examples.clone(), grex: s.grex, ..Default::default() };
+        f.set_text(&s.text);
         f
     }
 

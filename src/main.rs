@@ -4,11 +4,13 @@ mod events;
 mod filter;
 mod plot;
 mod remote;
+mod session;
 mod snapshot;
 mod store;
 mod tree;
 
-use clap::{Args, Parser, Subcommand, ValueEnum};
+use clap::parser::ValueSource;
+use clap::{ArgMatches, Args, CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
 use regex::{Regex, RegexBuilder};
 use std::io::{IsTerminal, Write};
 use std::path::PathBuf;
@@ -49,6 +51,14 @@ struct Cli {
     #[arg(short = 'R', long)]
     run_filter: Option<String>,
 
+    /// Reopen the last session (its logs, panes, filters, zoom… exactly as left)
+    #[arg(short = 'c', long = "continue")]
+    continue_last: bool,
+
+    /// Ignore the saved state for these logs (it is overwritten on exit)
+    #[arg(long)]
+    fresh: bool,
+
     #[command(flatten)]
     plot: PlotArgs,
 
@@ -57,7 +67,7 @@ struct Cli {
 }
 
 /// ssh options; override the config file and apply to every remote target.
-#[derive(Args)]
+#[derive(Args, Clone)]
 struct SshArgs {
     /// Config file [default: ~/.config/tbtui/config.toml, or $TBTUI_CONFIG]
     #[arg(long, global = true, value_name = "FILE")]
@@ -80,6 +90,27 @@ struct SshArgs {
 }
 
 impl SshArgs {
+    fn to_saved(&self) -> session::SshSaved {
+        session::SshSaved {
+            config: self.config.clone(),
+            user: self.user.clone(),
+            port: self.port,
+            identity: self.identity.clone(),
+            ssh_config: self.ssh_config.clone(),
+            jump: self.jump.clone(),
+        }
+    }
+
+    /// Use saved ssh settings for anything not given on this command line.
+    fn fill_from(&mut self, s: &session::SshSaved) {
+        self.config = self.config.take().or(s.config.clone());
+        self.user = self.user.take().or(s.user.clone());
+        self.port = self.port.or(s.port);
+        self.identity = self.identity.take().or(s.identity.clone());
+        self.ssh_config = self.ssh_config.take().or(s.ssh_config.clone());
+        self.jump = self.jump.take().or(s.jump.clone());
+    }
+
     fn overrides(&self) -> config::SshOverrides {
         config::SshOverrides {
             user: self.user.clone(),
@@ -114,6 +145,8 @@ enum Cmd {
         #[arg(long)]
         live: bool,
     },
+    /// List saved sessions (reopen one with `tbtui <its targets>` or the last with `tbtui -c`)
+    Sessions,
     /// Show the config file location and configured remotes
     Config {
         /// Write a commented example config if none exists
@@ -259,8 +292,29 @@ fn show_config(init: bool) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Was this option given on the command line (vs. its default)?
+fn explicit(m: &ArgMatches, id: &str) -> bool {
+    m.try_get_raw(id).is_ok() && m.value_source(id) == Some(ValueSource::CommandLine)
+}
+
+fn list_sessions() {
+    let sessions = session::list();
+    if sessions.is_empty() {
+        println!("no saved sessions yet ({})", session::state_dir().display());
+        return;
+    }
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs());
+    for (i, (_, s)) in sessions.iter().enumerate() {
+        let ago = plot::fmt_dur(now.saturating_sub(s.saved_at) as f64);
+        let pinned = if s.ui.pinned.is_empty() { String::new() } else { format!(", {} pinned", s.ui.pinned.len()) };
+        let last = if i == 0 { "  ← tbtui -c" } else { "" };
+        println!("{ago:>8} ago  tbtui {}{pinned}{last}", s.targets.join(" "));
+    }
+}
+
 fn main() -> anyhow::Result<()> {
-    let cli = Cli::parse();
+    let matches = Cli::command().get_matches();
+    let cli = Cli::from_arg_matches(&matches)?;
     match cli.cmd {
         Some(Cmd::Snapshot(s)) => {
             plot::init_colors(s.plot.no_truecolor);
@@ -287,12 +341,37 @@ fn main() -> anyhow::Result<()> {
         }
         Some(Cmd::Demo { dir, live }) => demo(&dir, live),
         Some(Cmd::Config { init }) => show_config(init),
+        Some(Cmd::Sessions) => {
+            list_sessions();
+            Ok(())
+        }
         None => {
             plot::init_colors(cli.plot.no_truecolor);
+            let mut args: Vec<String> = cli.logdir.iter().chain(&cli.logdir_flag).cloned().collect();
+            let mut ssh = cli.ssh.clone();
+            let mut restored = None;
+            if cli.continue_last {
+                let s = session::load_last().ok_or_else(|| anyhow::anyhow!("no saved session to continue"))?;
+                if args.is_empty() {
+                    args = s.targets.clone();
+                }
+                ssh.fill_from(&s.ssh);
+                restored = Some(s);
+            }
+            if args.is_empty() {
+                args.push(".".into());
+            }
+            let targets = session::normalize_targets(&args);
+            let key = session::key(&targets);
+            if restored.is_none() && !cli.fresh {
+                restored = session::load(&key);
+                if let Some(s) = &restored {
+                    ssh.fill_from(&s.ssh);
+                }
+            }
             let interval = Duration::from_secs_f64(cli.interval.max(0.1));
-            let (store, label) = open_store(cli.logdir.into_iter().chain(cli.logdir_flag).collect(), &cli.ssh, interval)?;
-            cli.plot.apply_palette();
-            let app = app::App::new(
+            let (store, label) = open_store(targets.clone(), &ssh, interval)?;
+            let mut app = app::App::new(
                 store,
                 label,
                 cli.plot.opts(),
@@ -300,6 +379,39 @@ fn main() -> anyhow::Result<()> {
                 cli.filter.as_deref().unwrap_or_default(),
                 cli.run_filter.as_deref().unwrap_or_default(),
             );
+            if let Some(s) = &restored {
+                app.apply_state(&s.ui);
+                // options typed on this command line win over the saved state
+                let o = cli.plot.opts();
+                let m = &matches;
+                let opts = app.opts_mut();
+                if explicit(m, "smoothing") {
+                    opts.smoothing = o.smoothing;
+                }
+                if explicit(m, "log_y") {
+                    opts.log_y = true;
+                }
+                if explicit(m, "x_axis") {
+                    opts.xmode = o.xmode;
+                    opts.x_range = None;
+                    opts.cursor = None;
+                }
+                if explicit(m, "ignore_outliers") {
+                    opts.ignore_outliers = true;
+                }
+                if explicit(m, "no_markers") {
+                    opts.markers = false;
+                }
+                if explicit(m, "interval") {
+                    app.set_interval(interval);
+                }
+                app.set_filters(
+                    cli.filter.as_deref().filter(|_| explicit(m, "filter")),
+                    cli.run_filter.as_deref().filter(|_| explicit(m, "run_filter")),
+                );
+            }
+            cli.plot.apply_palette();
+            app.set_session(app::SessionMeta { key, targets, ssh: ssh.to_saved() });
             let mut term = ratatui::init();
             let res = app.run(&mut term);
             ratatui::restore();

@@ -479,7 +479,7 @@ pub fn draw_panel(buf: &mut Buffer, area: Rect, title: &str, series: &[Series], 
     let pad = (y1 - y0) * pad_frac;
     // never pad past the data itself
     (y0, y1) = ((y0 - pad).max(full0 - (full1 - full0) * 0.05), (y1 + pad).min(full1 + (full1 - full0) * 0.05));
-    if !(y1 > y0) {
+    if y1.partial_cmp(&y0) != Some(std::cmp::Ordering::Greater) {
         (y0, y1) = (y0 - 1.0, y0 + 1.0);
     }
 

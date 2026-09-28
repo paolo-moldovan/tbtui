@@ -1,6 +1,7 @@
 //! Interactive, live-updating TUI.
 
 use crate::filter::Filter;
+use crate::session::{self, Session, SshSaved, TreeSaved, UiState};
 use crate::plot::{self, accent, frame, muted, rgb, PlotInfo, PlotOpts, Series, XMode};
 use crate::store::Store;
 use crate::tree::{self, Row};
@@ -138,6 +139,25 @@ impl TreePane {
         (i < self.rows.len()).then_some(i)
     }
 
+    fn to_saved(&self) -> TreeSaved {
+        TreeSaved {
+            filter: self.filter.to_saved(),
+            collapsed: self.collapsed.iter().cloned().collect(),
+            cursor: self.cur().map(|r| r.path.clone()),
+            offset: self.state.offset(),
+        }
+    }
+
+    fn restore(&mut self, s: &TreeSaved) {
+        self.filter = Filter::from_saved(&s.filter);
+        self.collapsed = s.collapsed.iter().cloned().collect();
+        self.rebuild(false);
+        if let Some(i) = s.cursor.as_ref().and_then(|c| self.rows.iter().position(|r| &r.path == c)) {
+            self.state.select(Some(i));
+        }
+        *self.state.offset_mut() = s.offset.min(self.rows.len().saturating_sub(1));
+    }
+
     fn set_all_collapsed(&mut self, collapse: bool, editing: bool) {
         self.collapsed.clear();
         if collapse {
@@ -178,6 +198,17 @@ pub struct App {
     side_area: Rect,
     plots: Vec<(usize, Rect, PlotInfo)>,
     quit: bool,
+    // persistence
+    session: Option<SessionMeta>,
+    last_saved: Option<UiState>,
+    last_save_check: Instant,
+}
+
+/// Where and under which targets this session is saved.
+pub struct SessionMeta {
+    pub key: String,
+    pub targets: Vec<String>,
+    pub ssh: SshSaved,
 }
 
 impl App {
@@ -208,6 +239,9 @@ impl App {
             side_area: Rect::default(),
             plots: Vec::new(),
             quit: false,
+            session: None,
+            last_saved: None,
+            last_save_check: Instant::now(),
         };
         app.sync_lists();
         app
@@ -231,11 +265,136 @@ impl App {
         self.tags.items = self.store.all_tags();
         self.runs.items = self.store.runs.keys().cloned().collect();
         for r in &self.runs.items {
-            let n = self.colors.len();
+            // next free color index (restored sessions may have gaps)
+            let n = self.colors.values().max().map_or(0, |m| m + 1);
             self.colors.entry(r.clone()).or_insert(n);
         }
         self.rebuild(Pane::Tags);
         self.rebuild(Pane::Runs);
+    }
+
+    // ------------------------------------------------------------ persistence
+
+    pub fn set_session(&mut self, meta: SessionMeta) {
+        self.session = Some(meta);
+    }
+
+    pub fn ui_state(&self) -> UiState {
+        let pane = |p: Pane| match p {
+            Pane::Tags => "tags",
+            Pane::Runs => "runs",
+            Pane::Charts => "charts",
+        };
+        UiState {
+            smoothing: self.opts.smoothing,
+            log_y: self.opts.log_y,
+            x_axis: if self.opts.xmode == XMode::Relative { "time" } else { "step" }.into(),
+            x_range: self.opts.x_range,
+            cursor: self.opts.cursor,
+            ignore_outliers: self.opts.ignore_outliers,
+            show_raw: self.opts.show_raw,
+            markers: self.opts.markers,
+            palette: plot::palette_name().into(),
+            // an open editor's unconfirmed changes are not saved
+            tags: self.tree_saved(Pane::Tags),
+            runs: self.tree_saved(Pane::Runs),
+            pinned: self.pinned.iter().cloned().collect(),
+            hidden: self.hidden.iter().cloned().collect(),
+            colors: self.colors.iter().map(|(k, v)| (k.clone(), *v)).collect(),
+            focus: pane(self.focus).into(),
+            show_all: self.show_all,
+            sidebar: self.sidebar,
+            side_w: self.side_w,
+            split_pct: self.split_pct,
+            grid_cols: self.grid_cols,
+            focus_panel: self.focus_panel,
+            live: self.live,
+            interval: self.interval.as_secs_f64(),
+        }
+    }
+
+    fn tree_saved(&self, p: Pane) -> TreeSaved {
+        let tp = if p == Pane::Runs { &self.runs } else { &self.tags };
+        let mut t = tp.to_saved();
+        if let Some(e) = self.editor.as_ref().filter(|e| e.pane == p) {
+            t.filter = e.saved.to_saved();
+        }
+        t
+    }
+
+    pub fn apply_state(&mut self, s: &UiState) {
+        self.opts.smoothing = s.smoothing.clamp(0.0, 0.999);
+        self.opts.log_y = s.log_y;
+        self.opts.xmode = if s.x_axis == "time" { XMode::Relative } else { XMode::Step };
+        self.opts.x_range = s.x_range.filter(|(a, b)| b > a);
+        self.opts.cursor = s.cursor;
+        self.opts.ignore_outliers = s.ignore_outliers;
+        self.opts.show_raw = s.show_raw;
+        self.opts.markers = s.markers;
+        plot::set_palette(&s.palette);
+        self.colors = s.colors.iter().map(|(k, v)| (k.clone(), *v)).collect();
+        self.pinned = s.pinned.iter().cloned().collect();
+        self.hidden = s.hidden.iter().cloned().collect();
+        self.focus = match s.focus.as_str() {
+            "runs" => Pane::Runs,
+            "charts" => Pane::Charts,
+            _ => Pane::Tags,
+        };
+        self.show_all = s.show_all;
+        self.sidebar = s.sidebar;
+        self.side_w = s.side_w;
+        self.split_pct = s.split_pct.clamp(15, 85);
+        self.grid_cols = s.grid_cols;
+        self.focus_panel = s.focus_panel;
+        self.live = s.live;
+        if s.interval > 0.0 {
+            self.interval = Duration::from_secs_f64(s.interval.max(0.1));
+        }
+        self.sync_lists();
+        self.tags.restore(&s.tags);
+        self.runs.restore(&s.runs);
+        self.last_saved = Some(self.ui_state());
+    }
+
+    pub fn set_interval(&mut self, d: Duration) {
+        self.interval = d;
+    }
+
+    pub fn opts_mut(&mut self) -> &mut PlotOpts {
+        &mut self.opts
+    }
+
+    pub fn set_filters(&mut self, tags: Option<&str>, runs: Option<&str>) {
+        if let Some(t) = tags {
+            self.tags.filter = Filter::new(t);
+        }
+        if let Some(r) = runs {
+            self.runs.filter = Filter::new(r);
+        }
+        self.sync_lists();
+    }
+
+    /// Write the session file if anything changed since the last save.
+    fn autosave(&mut self, force: bool) {
+        if !force && self.last_save_check.elapsed() < Duration::from_secs(2) {
+            return;
+        }
+        self.last_save_check = Instant::now();
+        let Some(meta) = &self.session else { return };
+        let ui = self.ui_state();
+        if !force && self.last_saved.as_ref() == Some(&ui) {
+            return;
+        }
+        let s = Session {
+            version: 1,
+            targets: meta.targets.clone(),
+            ssh: meta.ssh.clone(),
+            saved_at: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs()),
+            ui: ui.clone(),
+        };
+        if session::save(&meta.key, &s).is_ok() {
+            self.last_saved = Some(ui);
+        }
     }
 
     fn run_visible(&self, name: &str) -> bool {
@@ -326,11 +485,13 @@ impl App {
                 }
                 let before = self.last_change;
                 self.poll_data(false);
+                self.autosave(false);
                 // redraw for new data, and regularly for the "updated Xs ago" clock
                 dirty |= self.last_change != before || self.live;
             }
             Ok(())
         })();
+        self.autosave(true);
         let _ = execute!(std::io::stdout(), DisableMouseCapture);
         res
     }

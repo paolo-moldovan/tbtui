@@ -81,6 +81,32 @@ each event file since the last poll. Nothing needs to be installed on the
 server. If the connection drops, tbtui reconnects on its own and shows the
 error in the top bar until it succeeds.
 
+## Sessions
+
+tbtui remembers exactly how you left it:
+
+- which logs are open, including remote targets and their ssh settings
+- pane sizes and folded groups
+- tree cursor and scroll positions
+- filters, including grex examples and options
+- pinned tags and hidden runs
+- zoom, value cursor and focused chart
+- smoothing, view options, palette, and run colors
+
+It saves on quit, and within about 2 s of any change, so a dropped ssh
+session or a crash loses nothing.
+
+```bash
+tbtui runs/          # same logs as before → same view as before
+tbtui -c             # reopen the last session, from any directory
+tbtui sessions       # list saved sessions, newest first
+tbtui runs/ --fresh  # start clean (the saved state is replaced on exit)
+tbtui runs/ -s 0.9   # options typed on the command line win over the saved state
+```
+
+Sessions are stored per set of log targets in `~/.local/state/tbtui/sessions/`
+(or `$XDG_STATE_HOME/tbtui`).
+
 ## Keys
 
 Press `?` in the app for the full list.
