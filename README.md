@@ -4,6 +4,10 @@
 [![CI](https://github.com/paolo-moldovan/tbtui/actions/workflows/ci.yml/badge.svg)](https://github.com/paolo-moldovan/tbtui/actions/workflows/ci.yml)
 [![license](https://img.shields.io/crates/l/tbtui.svg)](#license)
 
+![tbtui showing five pinned charts side by side, with the tag and run trees](https://raw.githubusercontent.com/paolo-moldovan/tbtui/main/docs/tbtui-preview-image.png)
+
+[Animated demo](https://raw.githubusercontent.com/paolo-moldovan/tbtui/main/docs/tbtui-preview.gif) (GIF, 7 MB)
+
 TensorBoard scalars in your terminal. Point it at a log directory like you would
 `tensorboard --logdir`, and get live, interactive, colored loss curves — or print
 a one-off snapshot (great over SSH or in CI logs).

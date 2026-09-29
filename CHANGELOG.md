@@ -7,6 +7,11 @@ change behavior; the notes below call this out).
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-09-29
+
+### Changed
+- README now shows a screenshot and links an animated demo. No code changes.
+
 ## [0.1.0] - 2026-09-29
 
 First release.
@@ -29,5 +34,6 @@ First release.
   (`tbtui -c` reopens the last one).
 - `tbtui upgrade` checks crates.io and upgrades cargo installs.
 
-[Unreleased]: https://github.com/paolo-moldovan/tbtui/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/paolo-moldovan/tbtui/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/paolo-moldovan/tbtui/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/paolo-moldovan/tbtui/releases/tag/v0.1.0
