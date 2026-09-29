@@ -94,9 +94,10 @@ fn parse_summary(buf: &[u8], out: &mut Vec<(String, f64)>) {
     let mut pb = Pb::new(buf);
     while let Some((field, w)) = pb.next() {
         if let (1, Wire::Bytes(b)) = (field, w)
-            && let Some(s) = parse_value(b) {
-                out.push(s);
-            }
+            && let Some(s) = parse_value(b)
+        {
+            out.push(s);
+        }
     }
 }
 
@@ -184,14 +185,10 @@ fn parse_tensor(buf: &[u8]) -> Option<Tensor> {
             }
             (6, Wire::Fixed64(v)) if first.is_none() => first = Some(f64::from_bits(v)),
             // int_val (also carries half/bool), int64_val
-            (7 | 10 | 11, Wire::Bytes(b)) if first.is_none() => {
-                first = Pb::new(b).varint().map(|v| int_like(dtype, v))
-            }
+            (7 | 10 | 11, Wire::Bytes(b)) if first.is_none() => first = Pb::new(b).varint().map(|v| int_like(dtype, v)),
             (7 | 10 | 11, Wire::Varint(v)) if first.is_none() => first = Some(int_like(dtype, v)),
             // half_val
-            (13, Wire::Bytes(b)) if first.is_none() => {
-                first = Pb::new(b).varint().map(|v| f16_to_f64(v as u16))
-            }
+            (13, Wire::Bytes(b)) if first.is_none() => first = Pb::new(b).varint().map(|v| f16_to_f64(v as u16)),
             (13, Wire::Varint(v)) if first.is_none() => first = Some(f16_to_f64(v as u16)),
             _ => {}
         }

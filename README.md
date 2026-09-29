@@ -1,5 +1,9 @@
 # tbtui
 
+[![crates.io](https://img.shields.io/crates/v/tbtui.svg)](https://crates.io/crates/tbtui)
+[![CI](https://github.com/paolo-moldovan/tbtui/actions/workflows/ci.yml/badge.svg)](https://github.com/paolo-moldovan/tbtui/actions/workflows/ci.yml)
+[![license](https://img.shields.io/crates/l/tbtui.svg)](#license)
+
 TensorBoard scalars in your terminal. Point it at a log directory like you would
 `tensorboard --logdir`, and get live, interactive, colored loss curves — or print
 a one-off snapshot (great over SSH or in CI logs).
@@ -18,14 +22,37 @@ a one-off snapshot (great over SSH or in CI logs).
 
 ## Install
 
-Needs a Rust toolchain (`curl https://sh.rustup.rs -sSf | sh`):
-
 ```bash
-cargo install --path .
+cargo install tbtui --locked          # needs Rust 1.88+  (https://rustup.rs)
+cargo binstall tbtui                  # prebuilt binary, no compiler needed (cargo-binstall)
 ```
 
-Prebuilt Linux (musl, x86_64/arm64) and macOS binaries: push a `v*` tag and
-`.github/workflows/release.yml` attaches them to a GitHub release.
+Prebuilt binaries for Linux (x86_64 and arm64, static musl) and macOS (Intel
+and Apple silicon) are also attached to each
+[GitHub release](https://github.com/paolo-moldovan/tbtui/releases). Unpack the
+archive and put `tbtui` on your `PATH`.
+
+From a checkout: `cargo install --path .`
+
+Remote logs (`tbtui host:path`) need the `ssh` command on your machine; nothing
+is needed on the server beyond a POSIX shell. Local use has no other requirements.
+
+## Upgrade
+
+```bash
+tbtui upgrade --check     # is there a newer release?
+tbtui upgrade             # install it (when tbtui was installed with cargo)
+```
+
+`tbtui upgrade` asks crates.io for the latest version and runs
+`cargo install tbtui --locked` for you. If tbtui was installed another way it
+tells you how to upgrade instead of installing a second copy. Alternatives:
+`cargo binstall tbtui` (re-run to get the newest binary), or
+`cargo install-update tbtui` (from [cargo-update](https://crates.io/crates/cargo-update)).
+See [CHANGELOG.md](CHANGELOG.md) for what changed.
+
+Your config and saved sessions carry over between versions. tbtui reads
+older and newer session files and fills in anything missing.
 
 ## Use
 
@@ -151,3 +178,10 @@ the previous one.
 Colors use truecolor when `$COLORTERM` says so, 256 colors otherwise
 (`--no-truecolor` forces 256). Choose the run palette with `--palette` or
 `palette = "tol-bright"` in the config file. `NO_COLOR` / `--no-color` disables color in `snap`/`ls`.
+
+## License
+
+Licensed under either of [Apache License 2.0](LICENSE-APACHE) or
+[MIT license](LICENSE-MIT) at your option. Unless you state otherwise, any
+contribution you submit for inclusion is dual-licensed as above, without any
+additional terms.

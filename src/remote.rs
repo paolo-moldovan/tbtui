@@ -155,7 +155,11 @@ fn ensure_master(spec: &RemoteSpec, interactive: bool) -> Result<(), String> {
         Ok(())
     } else {
         let detail = msg.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("").trim().to_string();
-        Err(format!("ssh to {} failed: {}", spec.display(), if detail.is_empty() { status.to_string() } else { detail }))
+        Err(format!(
+            "ssh to {} failed: {}",
+            spec.display(),
+            if detail.is_empty() { status.to_string() } else { detail }
+        ))
     }
 }
 
@@ -230,7 +234,8 @@ fn parse_output(buf: &[u8], offsets: &mut HashMap<String, u64>) -> Vec<Chunk> {
         let Some(nl) = buf[pos..].iter().position(|&b| b == b'\n').map(|i| pos + i) else { break };
         let header = String::from_utf8_lossy(&buf[pos..nl]).into_owned();
         let mut parts = header.splitn(4, ' ');
-        let (Some("F"), Some(off), Some(n), Some(path)) = (parts.next(), parts.next(), parts.next(), parts.next()) else {
+        let (Some("F"), Some(off), Some(n), Some(path)) = (parts.next(), parts.next(), parts.next(), parts.next())
+        else {
             break;
         };
         let (Ok(off), Ok(n)) = (off.parse::<u64>(), n.parse::<usize>()) else { break };

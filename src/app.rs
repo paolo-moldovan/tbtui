@@ -1,8 +1,8 @@
 //! Interactive, live-updating TUI.
 
 use crate::filter::Filter;
+use crate::plot::{self, PlotInfo, PlotOpts, Series, XMode, accent, frame, muted, rgb};
 use crate::session::{self, Session, SshSaved, TreeSaved, UiState};
-use crate::plot::{self, accent, frame, muted, rgb, PlotInfo, PlotOpts, Series, XMode};
 use crate::store::Store;
 use crate::tree::{self, Row};
 use ratatui::crossterm::event::{
@@ -212,7 +212,14 @@ pub struct SessionMeta {
 }
 
 impl App {
-    pub fn new(store: Store, logdir_label: String, opts: PlotOpts, interval: Duration, tag_filter: &str, run_filter: &str) -> Self {
+    pub fn new(
+        store: Store,
+        logdir_label: String,
+        opts: PlotOpts,
+        interval: Duration,
+        tag_filter: &str,
+        run_filter: &str,
+    ) -> Self {
         let mut app = App {
             store,
             logdir_label,
@@ -831,7 +838,13 @@ impl App {
             self.opts.x_range = None;
         } else if nb - na > 1e-9 {
             // keep the window inside the data where possible
-            let shift = if na < fa { fa - na } else if nb > fb { fb - nb } else { 0.0 };
+            let shift = if na < fa {
+                fa - na
+            } else if nb > fb {
+                fb - nb
+            } else {
+                0.0
+            };
             self.opts.x_range = Some((na + shift, nb + shift));
         }
     }
@@ -852,7 +865,8 @@ impl App {
         let (tags_a, runs_a) = (self.tags.area, self.runs.area);
         let in_rows = m.row >= side.y && m.row < side.bottom();
         let on_vbar = self.sidebar && in_rows && (m.column + 1 == side.right() || m.column == side.right());
-        let on_hbar = self.sidebar && side.contains(pos) && (m.row + 1 == tags_a.bottom() || m.row == runs_a.y) && !on_vbar;
+        let on_hbar =
+            self.sidebar && side.contains(pos) && (m.row + 1 == tags_a.bottom() || m.row == runs_a.y) && !on_vbar;
         let hit_plot = self.plots.iter().find(|(_, r, _)| r.contains(pos)).copied();
         let x_at = |info: &PlotInfo| {
             let g = info.graph;
@@ -883,9 +897,10 @@ impl App {
             }
             MouseEventKind::Moved | MouseEventKind::Drag(MouseButton::Left) => {
                 if let Some((_, _, info)) = hit_plot
-                    && info.graph.contains(pos) {
-                        self.opts.cursor = Some(x_at(&info));
-                    }
+                    && info.graph.contains(pos)
+                {
+                    self.opts.cursor = Some(x_at(&info));
+                }
             }
             MouseEventKind::Down(MouseButton::Left) => {
                 if let Some((idx, _, info)) = hit_plot {
@@ -960,9 +975,11 @@ impl App {
         let [side, main] = Layout::horizontal([Constraint::Length(side_w), Constraint::Min(20)]).areas(body);
         self.side_area = side;
         if self.sidebar {
-            let [tags_a, runs_a] =
-                Layout::vertical([Constraint::Percentage(self.split_pct), Constraint::Percentage(100 - self.split_pct)])
-                    .areas(side);
+            let [tags_a, runs_a] = Layout::vertical([
+                Constraint::Percentage(self.split_pct),
+                Constraint::Percentage(100 - self.split_pct),
+            ])
+            .areas(side);
             self.draw_tree(f, tags_a, Pane::Tags);
             self.draw_tree(f, runs_a, Pane::Runs);
         } else {
@@ -986,11 +1003,17 @@ impl App {
         let live = if self.live {
             Span::styled(" ● LIVE ", Style::default().fg(dark).bg(rgb(0x5c, 0xd6, 0x7a)).add_modifier(Modifier::BOLD))
         } else {
-            Span::styled(" ❚❚ PAUSED ", Style::default().fg(dark).bg(rgb(0xff, 0xd1, 0x4f)).add_modifier(Modifier::BOLD))
+            Span::styled(
+                " ❚❚ PAUSED ",
+                Style::default().fg(dark).bg(rgb(0xff, 0xd1, 0x4f)).add_modifier(Modifier::BOLD),
+            )
         };
         let ago = self.last_change.elapsed().as_secs();
         let stats = match &self.store.error {
-            Some(e) => Span::styled(format!("  ⚠ {e}  "), Style::default().fg(rgb(0xff, 0x5c, 0x7a)).add_modifier(Modifier::BOLD)),
+            Some(e) => Span::styled(
+                format!("  ⚠ {e}  "),
+                Style::default().fg(rgb(0xff, 0x5c, 0x7a)).add_modifier(Modifier::BOLD),
+            ),
             None => Span::styled(
                 format!(
                     "  {} runs · {} tags · {} points · updated {} ago  ",
@@ -1054,7 +1077,13 @@ impl App {
                             Span::styled(format!("{} ", plot::run_symbol(ci)), st)
                         }
                         None => Span::styled(
-                            if vis == names.len() { "✔ " } else if vis > 0 { "◐ " } else { "· " },
+                            if vis == names.len() {
+                                "✔ "
+                            } else if vis > 0 {
+                                "◐ "
+                            } else {
+                                "· "
+                            },
                             Style::default().fg(muted()),
                         ),
                     }
@@ -1092,7 +1121,10 @@ impl App {
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
             .border_style(Style::default().fg(if focused { accent() } else { frame() }))
-            .title(Span::styled(title, Style::default().fg(if focused { accent() } else { muted() }).add_modifier(Modifier::BOLD)));
+            .title(Span::styled(
+                title,
+                Style::default().fg(if focused { accent() } else { muted() }).add_modifier(Modifier::BOLD),
+            ));
         let list = List::new(items)
             .block(block)
             .highlight_style(if focused {
@@ -1117,7 +1149,10 @@ impl App {
                 "Nothing selected: highlight a tag, or pin some with Space."
             };
             let p = Paragraph::new(Line::from(Span::styled(msg, Style::default().fg(muted()))).centered()).block(
-                Block::default().borders(Borders::ALL).border_type(BorderType::Rounded).border_style(Style::default().fg(frame())),
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded)
+                    .border_style(Style::default().fg(frame())),
             );
             f.render_widget(p, area);
             return;
@@ -1161,7 +1196,10 @@ impl App {
             regex_line.push(Span::styled(fl.text.clone(), bright));
         }
         if fl.invalid {
-            regex_line.push(Span::styled("  (invalid regex: matching literally)", Style::default().fg(rgb(0xff, 0x5c, 0x7a))));
+            regex_line.push(Span::styled(
+                "  (invalid regex: matching literally)",
+                Style::default().fg(rgb(0xff, 0x5c, 0x7a)),
+            ));
         }
         let mut ex_line = vec![dimt("examples")];
         for x in &fl.examples {
@@ -1201,11 +1239,16 @@ impl App {
             .title(Span::styled(format!(" filter {name} "), Style::default().fg(accent()).add_modifier(Modifier::BOLD)))
             .title(Line::from(dimt(&format!(" {}/{} match ", tp.matched(), tp.items.len()))).right_aligned());
         f.render_widget(Clear, area);
-        f.render_widget(Paragraph::new(vec![Line::from(regex_line), Line::from(ex_line), Line::from(opts_line)]).block(block), area);
+        f.render_widget(
+            Paragraph::new(vec![Line::from(regex_line), Line::from(ex_line), Line::from(opts_line)]).block(block),
+            area,
+        );
     }
 
     fn draw_bottom(&self, f: &mut Frame, area: Rect) {
-        let key = |k: &str| Span::styled(format!(" {k} "), Style::default().fg(rgb(0x10, 0x10, 0x10)).bg(rgb(0x9a, 0xa0, 0xaa)));
+        let key = |k: &str| {
+            Span::styled(format!(" {k} "), Style::default().fg(rgb(0x10, 0x10, 0x10)).bg(rgb(0x9a, 0xa0, 0xaa)))
+        };
         let desc = |d: &str| Span::styled(format!(" {d}  "), Style::default().fg(muted()));
         let mut spans = Vec::new();
         let mut add = |k: &str, d: &str| {
@@ -1250,7 +1293,10 @@ impl App {
             "selection".to_string()
         };
         let cols = if self.grid_cols > 0 { format!(" · {} cols", self.grid_cols) } else { String::new() };
-        let right = Line::from(Span::styled(format!(" {mode}{cols} · {} ", plot::palette_name()), Style::default().fg(muted())));
+        let right = Line::from(Span::styled(
+            format!(" {mode}{cols} · {} ", plot::palette_name()),
+            Style::default().fg(muted()),
+        ));
         f.render_widget(Paragraph::new(right.right_aligned()), area);
         f.render_widget(Paragraph::new(Line::from(spans)), area);
     }
@@ -1325,7 +1371,9 @@ fn draw_help(f: &mut Frame) {
                 .border_type(BorderType::Rounded)
                 .border_style(Style::default().fg(accent()))
                 .title(Span::styled(" keys ", Style::default().fg(accent()).add_modifier(Modifier::BOLD)))
-                .title_bottom(Line::from(Span::styled(" any key to close ", Style::default().fg(muted()))).right_aligned())
+                .title_bottom(
+                    Line::from(Span::styled(" any key to close ", Style::default().fg(muted()))).right_aligned(),
+                )
                 .padding(ratatui::widgets::Padding::vertical(1)),
         ),
         r,

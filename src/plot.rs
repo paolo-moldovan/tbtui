@@ -16,8 +16,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 static TRUECOLOR: OnceLock<bool> = OnceLock::new();
 
 pub fn init_colors(force_256: bool) {
-    let tc = !force_256
-        && std::env::var("COLORTERM").is_ok_and(|v| v.contains("truecolor") || v.contains("24bit"));
+    let tc = !force_256 && std::env::var("COLORTERM").is_ok_and(|v| v.contains("truecolor") || v.contains("24bit"));
     let _ = TRUECOLOR.set(tc);
 }
 
@@ -289,9 +288,10 @@ fn visible(xs: &[f64], ys: &[f64], view: (f64, f64), buckets: usize, log: bool) 
         // keep one neighbour on each side so lines reach the edges
         let near = (i + 1 < n && xs[i + 1] >= view.0 && x < view.0) || (i > 0 && xs[i - 1] <= view.1 && x > view.1);
         if (inside || near)
-            && let Some(y) = tf(ys[i]).filter(|y| y.is_finite()) {
-                pts.push((x, y));
-            }
+            && let Some(y) = tf(ys[i]).filter(|y| y.is_finite())
+        {
+            pts.push((x, y));
+        }
     }
     if pts.len() <= buckets * 4 || buckets == 0 {
         return pts;
@@ -389,7 +389,14 @@ pub fn full_x_range(series: &[Series], mode: XMode) -> Option<(f64, f64)> {
 
 // ---------------------------------------------------------------- drawing
 
-pub fn draw_panel(buf: &mut Buffer, area: Rect, title: &str, series: &[Series], o: &PlotOpts, focused: bool) -> PlotInfo {
+pub fn draw_panel(
+    buf: &mut Buffer,
+    area: Rect,
+    title: &str,
+    series: &[Series],
+    o: &PlotOpts,
+    focused: bool,
+) -> PlotInfo {
     let border = if focused { accent() } else { frame() };
     let mut flags = Vec::new();
     if o.smoothing > 0.0 {
@@ -415,7 +422,9 @@ pub fn draw_panel(buf: &mut Buffer, area: Rect, title: &str, series: &[Series], 
             format!(" {title} "),
             Style::default().fg(if focused { accent() } else { rgb(0xe6, 0xe6, 0xe6) }).add_modifier(Modifier::BOLD),
         )))
-        .title(Line::from(Span::styled(format!(" {} ", flags.join(" · ")), Style::default().fg(muted()))).right_aligned());
+        .title(
+            Line::from(Span::styled(format!(" {} ", flags.join(" · ")), Style::default().fg(muted()))).right_aligned(),
+        );
     let inner = block.inner(area);
     block.render(area, buf);
 
@@ -425,8 +434,7 @@ pub fn draw_panel(buf: &mut Buffer, area: Rect, title: &str, series: &[Series], 
     } else {
         0
     };
-    let [chart_area, legend_area] =
-        Layout::vertical([Constraint::Min(3), Constraint::Length(legend_h)]).areas(inner);
+    let [chart_area, legend_area] = Layout::vertical([Constraint::Min(3), Constraint::Length(legend_h)]).areas(inner);
 
     let Some(x_full) = full_x_range(series, o.xmode) else {
         let msg = Line::from(Span::styled("no data", Style::default().fg(muted()))).centered();
@@ -523,8 +531,20 @@ pub fn draw_panel(buf: &mut Buffer, area: Rect, title: &str, series: &[Series], 
         XMode::Relative => fmt_dur(v),
     };
     let fy = |v: f64| if o.log_y { fmt_num(10f64.powf(v)) } else { fmt_num(v) };
-    let nx = if chart_area.width > 90 { 5 } else if chart_area.width > 40 { 3 } else { 2 };
-    let ny = if chart_area.height > 14 { 5 } else if chart_area.height > 6 { 3 } else { 2 };
+    let nx = if chart_area.width > 90 {
+        5
+    } else if chart_area.width > 40 {
+        3
+    } else {
+        2
+    };
+    let ny = if chart_area.height > 14 {
+        5
+    } else if chart_area.height > 6 {
+        3
+    } else {
+        2
+    };
     let lab = |a: f64, b: f64, n: usize, f: &dyn Fn(f64) -> String| -> Vec<String> {
         (0..n).map(|i| f(a + (b - a) * i as f64 / (n - 1) as f64)).collect()
     };
@@ -641,7 +661,10 @@ fn draw_legend(buf: &mut Buffer, area: Rect, series: &[Series], preps: &[Prep], 
             cells.push(if smoothed { Span::raw(fmt_num(p.raw[i])) } else { Span::styled(fmt_num(p.raw[i]), strong) });
             cells.push(Span::styled(s.points[i].step.to_string(), Style::default().fg(muted())));
             cells.push(Span::styled(fmt_dur(s.points[i].wall - s.first_wall), Style::default().fg(muted())));
-            cells.push(Span::styled(if min.is_finite() { fmt_num(min) } else { String::new() }, Style::default().fg(muted())));
+            cells.push(Span::styled(
+                if min.is_finite() { fmt_num(min) } else { String::new() },
+                Style::default().fg(muted()),
+            ));
         }
         cells.truncate(keep);
         Row::new(cells)

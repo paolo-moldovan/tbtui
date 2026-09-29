@@ -75,7 +75,14 @@ fn emit(node: &Node, prefix: &str, label_prefix: &str, depth: usize, collapsed: 
             c = c2;
         }
         if let Some(i) = c.leaf {
-            rows.push(Row { depth, label: label.clone(), path: path.clone(), leaf: Some(i), expanded: false, leaves: vec![i] });
+            rows.push(Row {
+                depth,
+                label: label.clone(),
+                path: path.clone(),
+                leaf: Some(i),
+                expanded: false,
+                leaves: vec![i],
+            });
         }
         if c.leaf.is_some() && !c.children.is_empty() {
             emit(c, &path, &format!("{label}/"), depth, collapsed, rows);
@@ -113,7 +120,10 @@ mod tests {
         let keep = vec![true; 4];
         let rows = build(&items, &keep, &HashSet::new());
         let labels: Vec<_> = rows.iter().map(|r| (r.depth, r.label.as_str())).collect();
-        assert_eq!(labels, vec![(0, "exp/2024"), (1, "lr_1e-3"), (2, "seed0"), (2, "seed1"), (1, "lr_3e-4"), (0, "loss")]);
+        assert_eq!(
+            labels,
+            vec![(0, "exp/2024"), (1, "lr_1e-3"), (2, "seed0"), (2, "seed1"), (1, "lr_3e-4"), (0, "loss")]
+        );
         assert_eq!(rows[0].leaves.len(), 3);
         assert_eq!(parent(&rows, 3), Some(1));
 

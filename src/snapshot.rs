@@ -1,6 +1,6 @@
 //! Non-interactive output: render charts into a buffer and print as ANSI.
 
-use crate::plot::{self, fmt_num, PlotOpts, Series};
+use crate::plot::{self, PlotOpts, Series, fmt_num};
 use crate::store::Store;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
@@ -26,11 +26,8 @@ pub fn run(store: &Store, a: &SnapArgs) -> anyhow::Result<()> {
         .filter(|(_, (n, _))| a.runs.as_ref().is_none_or(|r| r.is_match(n)))
         .map(|(i, (n, r))| (i, n, r))
         .collect();
-    let tags: Vec<String> = store
-        .all_tags()
-        .into_iter()
-        .filter(|t| a.tags.as_ref().is_none_or(|r| r.is_match(t)))
-        .collect();
+    let tags: Vec<String> =
+        store.all_tags().into_iter().filter(|t| a.tags.as_ref().is_none_or(|r| r.is_match(t))).collect();
     if tags.is_empty() {
         anyhow::bail!("no scalar tags found (runs: {})", store.runs.len());
     }

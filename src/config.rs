@@ -104,11 +104,9 @@ pub fn resolve(arg: &str, cfg: &Config, ov: &SshOverrides) -> anyhow::Result<Tar
         None => (None, dest),
     };
     let rc = cfg.remotes.get(name).cloned().unwrap_or_default();
-    let path = path
-        .filter(|p| !p.is_empty())
-        .map(str::to_string)
-        .or(rc.path)
-        .ok_or_else(|| anyhow::anyhow!("no log path for {name}: use {name}:/path/to/logs or set `path` in its config entry"))?;
+    let path = path.filter(|p| !p.is_empty()).map(str::to_string).or(rc.path).ok_or_else(|| {
+        anyhow::anyhow!("no log path for {name}: use {name}:/path/to/logs or set `path` in its config entry")
+    })?;
     Ok(Target::Remote(RemoteSpec {
         name: name.to_string(),
         host: rc.host.unwrap_or_else(|| name.to_string()),

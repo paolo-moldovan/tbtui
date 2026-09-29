@@ -1,3 +1,11 @@
+//! tbtui: TensorBoard scalars in your terminal.
+//!
+//! Module map: `events` decodes TFRecord/protobuf event files, `store` tails
+//! them (locally or through `remote`, which runs `ssh`), `plot` and `tree`
+//! render, `app` is the interactive UI, `snapshot` the one-shot output,
+//! `filter` the regex/grex filters, `session` persists UI state, `config`
+//! reads `config.toml`, and `upgrade` implements `tbtui upgrade`.
+
 mod app;
 mod config;
 mod events;
@@ -8,14 +16,15 @@ mod session;
 mod snapshot;
 mod store;
 mod tree;
+mod upgrade;
 
 use clap::parser::ValueSource;
 use clap::{ArgMatches, Args, CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
 use regex::{Regex, RegexBuilder};
 use std::io::{IsTerminal, Write};
 use std::path::PathBuf;
-use store::Target;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use store::Target;
 
 /// TensorBoard scalars in your terminal.
 ///
@@ -147,6 +156,12 @@ enum Cmd {
     },
     /// List saved sessions (reopen one with `tbtui <its targets>` or the last with `tbtui -c`)
     Sessions,
+    /// Check for a newer release on crates.io and install it (cargo installs only)
+    Upgrade {
+        /// Only report whether a newer version exists
+        #[arg(long)]
+        check: bool,
+    },
     /// Show the config file location and configured remotes
     Config {
         /// Write a commented example config if none exists
@@ -247,9 +262,10 @@ fn open_store(args: Vec<String>, ssh: &SshArgs, interval: Duration) -> anyhow::R
     let args = if args.is_empty() { vec![".".to_string()] } else { args };
     let cfg = config::load(ssh.config.as_deref())?;
     if let Some(p) = &cfg.palette
-        && !plot::set_palette(p) {
-            anyhow::bail!("unknown palette {p:?} in config (okabe-ito, tol-bright, vivid)");
-        }
+        && !plot::set_palette(p)
+    {
+        anyhow::bail!("unknown palette {p:?} in config (okabe-ito, tol-bright, vivid)");
+    }
     let ov = ssh.overrides();
     let targets = args.iter().map(|a| config::resolve(a, &cfg, &ov)).collect::<anyhow::Result<Vec<Target>>>()?;
     let label = targets
@@ -341,6 +357,7 @@ fn main() -> anyhow::Result<()> {
         }
         Some(Cmd::Demo { dir, live }) => demo(&dir, live),
         Some(Cmd::Config { init }) => show_config(init),
+        Some(Cmd::Upgrade { check }) => upgrade::run(check),
         Some(Cmd::Sessions) => {
             list_sessions();
             Ok(())
@@ -433,7 +450,8 @@ fn demo(dir: &std::path::Path, live: bool) -> anyhow::Result<()> {
         seed ^= seed << 17;
         (seed >> 11) as f64 / (1u64 << 53) as f64 - 0.5
     };
-    let runs = [("lr_1e-3/seed0", 1.0, 0.0), ("lr_1e-3/seed1", 1.0, 0.03), ("lr_3e-4", 0.5, 0.0), ("lr_1e-2", 2.2, 0.08)];
+    let runs =
+        [("lr_1e-3/seed0", 1.0, 0.0), ("lr_1e-3/seed1", 1.0, 0.03), ("lr_3e-4", 0.5, 0.0), ("lr_1e-2", 2.2, 0.08)];
     let mut files = Vec::new();
     for (name, _, _) in &runs {
         let d = dir.join(name);
@@ -455,7 +473,11 @@ fn demo(dir: &std::path::Path, live: bool) -> anyhow::Result<()> {
             let acc = (1.0 - base / 2.5 + 0.02 * noise()).clamp(0.0, 1.0) as f32;
             let lr = (1e-3 * speed * (1.0 + (std::f64::consts::PI * s / 3000.0).cos()) / 2.0) as f32;
             let wall = if live { now() } else { t0 + s * 0.5 };
-            let mut scalars = vec![("loss/train", loss), ("lr", lr), ("grad_norm", (1.0 + 3.0 * noise().abs() / (1.0 + s / 500.0)) as f32)];
+            let mut scalars = vec![
+                ("loss/train", loss),
+                ("lr", lr),
+                ("grad_norm", (1.0 + 3.0 * noise().abs() / (1.0 + s / 500.0)) as f32),
+            ];
             if step % 50 == 0 {
                 scalars.push(("loss/val", val));
                 scalars.push(("accuracy/val", acc));

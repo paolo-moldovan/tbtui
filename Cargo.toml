@@ -2,10 +2,23 @@
 name = "tbtui"
 version = "0.1.0"
 edition = "2024"
-description = "TensorBoard scalars in your terminal: live, interactive loss curves"
-license = "MIT"
+authors = ["Paolo Moldovan", "Claude <noreply@anthropic.com>"]
+rust-version = "1.88"
+description = "TensorBoard scalars in your terminal: live, interactive loss curves, local or over ssh"
+readme = "README.md"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/paolo-moldovan/tbtui"
 keywords = ["tensorboard", "tui", "machine-learning", "plot", "terminal"]
 categories = ["command-line-utilities", "visualization"]
+# Ship only what a build needs (keeps editor/tool folders out of the crate).
+include = ["src/**/*", "Cargo.toml", "Cargo.lock", "README.md", "CHANGELOG.md", "LICENSE-*"]
+
+# `cargo binstall tbtui` downloads the prebuilt binaries that
+# .github/workflows/release.yml attaches to each GitHub release.
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/{ name }-{ target }.tar.gz"
+bin-dir = "{ bin }{ binary-ext }"
+pkg-fmt = "tgz"
 
 [dependencies]
 anyhow = "1.0.104"

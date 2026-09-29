@@ -1,8 +1,8 @@
 //! Regex filters for the tag and run trees. A filter is either typed as a
 //! regex or generated with grex from example names.
 
-use grex::RegExpBuilder;
 use crate::session::FilterSaved;
+use grex::RegExpBuilder;
 use regex::{Regex, RegexBuilder};
 use serde::{Deserialize, Serialize};
 
