@@ -18,7 +18,7 @@ a one-off snapshot (great over SSH or in CI logs).
 - Regex filters for tags and runs, or build one from examples with [grex](https://github.com/pemistahl/grex)
 - Colorblind-safe palettes (Okabe-Ito by default, Paul Tol bright) plus a shape per run drawn on the lines
 - Value cursor (keys or mouse hover), zoom/pan (keys or scroll wheel)
-- Single ~2 MB static binary, no Python, no protobuf codegen. 1.5M points load in ~0.1 s
+- Single ~3 MB binary, no Python, no protobuf codegen. 1.5M points load in ~0.1 s
 
 ## Install
 
